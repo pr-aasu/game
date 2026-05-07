@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TicTac — Multiplayer</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Unbounded:wght@400;700&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0c0c0f;
+    --surface: #141418;
+    --surface2: #1c1c22;
+    --border: #2a2a35;
+    --text: #f0ede8;
+    --muted: #7a7a8a;
+    --x-color: #e8563a;
+    --o-color: #4db8ff;
+    --accent: #f5c842;
+    --radius: 10px;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem 1rem;
+  }
+
+  header {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 2.5rem;
+  }
+
+  header h1 {
+    font-family: 'Unbounded', sans-serif;
+    font-size: 1.6rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    color: var(--text);
+  }
+
+  header span {
+    font-size: 0.7rem;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  /* CONFIG SCREEN */
+  #config-screen {
+    width: 100%;
+    max-width: 400px;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .field-label {
+    font-size: 0.7rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 5px;
+  }
+
+  input[type="text"], input[type="url"] {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 0.85rem;
+    padding: 10px 14px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  input:focus { border-color: var(--accent); }
+
+  .btn {
+    background: var(--accent);
+    color: #0c0c0f;
+    border: none;
+    border-radius: var(--radius);
+    font-family: 'Unbounded', sans-serif;
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 12px 20px;
+    cursor: pointer;
+    transition: opacity 0.15s, transform 0.1s;
+    letter-spacing: 0.02em;
+  }
+
+  .btn:hover { opacity: 0.9; }
+  .btn:active { transform: scale(0.97); }
+
+  .btn-secondary {
+    background: var(--surface2);
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+
+  .divider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--muted);
+    font-size: 0.7rem;
+  }
+  .divider::before, .divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* GAME SCREEN */
+  #game-screen {
+    display: none;
+    width: 100%;
+    max-width: 700px;
+    gap: 1.5rem;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .game-layout {
+    display: grid;
+    grid-template-columns: 1fr 260px;
+    gap: 1.5rem;
+    align-items: start;
+  }
+
+  .game-left {}
+
+  .status-bar {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+    font-size: 0.78rem;
+  }
+
+  .status-bar .room-id { color: var(--muted); }
+  .status-bar .room-id span { color: var(--accent); font-weight: 500; }
+
+  #status-msg {
+    font-size: 0.78rem;
+    font-weight: 500;
+  }
+
+  .players-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 1rem;
+  }
+
+  .player-pill {
+    flex: 1;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.78rem;
+    transition: border-color 0.3s;
+  }
+
+  .player-pill.active { border-color: var(--accent); }
+
+  .player-pill .sym {
+    font-family: 'Unbounded', sans-serif;
+    font-weight: 700;
+    font-size: 1rem;
+  }
+
+  .sym-x { color: var(--x-color); }
+  .sym-o { color: var(--o-color); }
+
+  .player-pill .name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--muted);
+  }
+
+  .player-pill .name.set { color: var(--text); }
+
+  /* BOARD */
+  .board-wrap {
+    aspect-ratio: 1;
+    width: 100%;
+    position: relative;
+  }
+
+  #board {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    gap: 8px;
+    width: 100%;
+    height: 100%;
+  }
+
+  .cell {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Unbounded', sans-serif;
+    font-size: 2.2rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, transform 0.1s;
+    user-select: none;
+    aspect-ratio: 1;
+  }
+
+  .cell:hover:not(.taken) { background: var(--surface2); border-color: #3a3a48; }
+  .cell:active:not(.taken) { transform: scale(0.95); }
+  .cell.taken { cursor: default; }
+  .cell.x { color: var(--x-color); }
+  .cell.o { color: var(--o-color); }
+  .cell.win { border-color: var(--accent); background: #1f1c0e; }
+
+  /* CHAT */
+  .chat-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    display: flex;
+    flex-direction: column;
+    height: 380px;
+  }
+
+  .chat-header {
+    padding: 10px 14px;
+    font-size: 0.68rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    scroll-behavior: smooth;
+  }
+
+  .chat-messages::-webkit-scrollbar { width: 4px; }
+  .chat-messages::-webkit-scrollbar-track { background: transparent; }
+  .chat-messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  .msg {
+    font-size: 0.75rem;
+    line-height: 1.45;
+  }
+
+  .msg .msg-name {
+    font-weight: 500;
+    margin-right: 4px;
+  }
+
+  .msg.sys { color: var(--muted); font-style: italic; }
+  .msg.from-me .msg-name { color: var(--accent); }
+  .msg.from-other .msg-name { color: var(--o-color); }
+
+  .chat-input-row {
+    display: flex;
+    gap: 6px;
+    padding: 8px 10px;
+    border-top: 1px solid var(--border);
+  }
+
+  .chat-input-row input {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 0.75rem;
+    padding: 7px 10px;
+    outline: none;
+  }
+
+  .chat-input-row input:focus { border-color: var(--accent); }
+
+  .chat-send {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--accent);
+    font-family: 'DM Mono', monospace;
+    font-size: 0.8rem;
+    font-weight: 500;
+    padding: 7px 12px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .chat-send:hover { background: #2a2a35; }
+
+  /* RESULT OVERLAY */
+  .result-overlay {
+    display: none;
+    position: absolute;
+    inset: 0;
+    background: rgba(12,12,15,0.88);
+    border-radius: var(--radius);
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 1rem;
+    backdrop-filter: blur(4px);
+  }
+
+  .result-overlay.show { display: flex; }
+
+  .result-text {
+    font-family: 'Unbounded', sans-serif;
+    font-size: 1.3rem;
+    font-weight: 700;
+    text-align: center;
+  }
+
+  .play-again-btn {
+    background: var(--accent);
+    color: #0c0c0f;
+    border: none;
+    border-radius: 8px;
+    font-family: 'Unbounded', sans-serif;
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 10px 18px;
+    cursor: pointer;
+    letter-spacing: 0.02em;
+  }
+
+  #error-msg {
+    color: #e8563a;
+    font-size: 0.75rem;
+    min-height: 18px;
+  }
+
+  @media (max-width: 580px) {
+    .game-layout { grid-template-columns: 1fr; }
+    .chat-panel { height: 260px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>TicTac</h1>
+  <span>Multiplayer</span>
+</header>
+
+<!-- CONFIG SCREEN -->
+<div id="config-screen">
+  <div>
+    <div class="field-label">Your name</div>
+    <input type="text" id="player-name" placeholder="e.g. Aziz" maxlength="20" />
+  </div>
+  <div id="error-msg"></div>
+  <button class="btn" onclick="createRoom()">Create Room</button>
+  <div class="divider">or join existing</div>
+  <div style="display:flex;gap:8px;">
+    <input type="text" id="join-room-id" placeholder="Room code" style="flex:1;text-transform:uppercase;" maxlength="6" />
+    <button class="btn btn-secondary" onclick="joinRoom()" style="white-space:nowrap;">Join</button>
+  </div>
+</div>
+
+<!-- GAME SCREEN -->
+<div id="game-screen">
+  <div class="status-bar">
+    <div class="room-id">Room: <span id="room-code-display">----</span></div>
+    <div id="status-msg">Waiting...</div>
+  </div>
+
+  <div class="game-layout">
+    <div class="game-left">
+      <div class="players-row">
+        <div class="player-pill" id="pill-x">
+          <span class="sym sym-x">X</span>
+          <span class="name" id="name-x">waiting...</span>
+        </div>
+        <div class="player-pill" id="pill-o">
+          <span class="sym sym-o">O</span>
+          <span class="name" id="name-o">waiting...</span>
+        </div>
+      </div>
+
+      <div class="board-wrap">
+        <div id="board">
+          <div class="cell" onclick="makeMove(0)"></div>
+          <div class="cell" onclick="makeMove(1)"></div>
+          <div class="cell" onclick="makeMove(2)"></div>
+          <div class="cell" onclick="makeMove(3)"></div>
+          <div class="cell" onclick="makeMove(4)"></div>
+          <div class="cell" onclick="makeMove(5)"></div>
+          <div class="cell" onclick="makeMove(6)"></div>
+          <div class="cell" onclick="makeMove(7)"></div>
+          <div class="cell" onclick="makeMove(8)"></div>
+        </div>
+        <div class="result-overlay" id="result-overlay">
+          <div class="result-text" id="result-text">Draw!</div>
+          <button class="play-again-btn" onclick="resetGame()">Play Again</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="chat-panel">
+      <div class="chat-header">Live Chat</div>
+      <div class="chat-messages" id="chat-messages"></div>
+      <div class="chat-input-row">
+        <input type="text" id="chat-input" placeholder="Say something..." maxlength="120"
+          onkeydown="if(event.key==='Enter') sendChat()" />
+        <button class="chat-send" onclick="sendChat()">↑</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let supabase, roomId, myName, mySymbol, currentRoom;
+let channel = null;
+
+const WINS = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+
+function showError(msg) {
+  document.getElementById('error-msg').textContent = msg;
+}
+
+function genCode() {
+  return Math.random().toString(36).substring(2, 8).toUpperCase();
+}
+
+const SUPA_URL = 'https://zyjedgocgypekkionccj.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp5amVkZ29jZ3lwZWtraW9uY2NqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgxMTg1NDMsImV4cCI6MjA5MzY5NDU0M30.9LDBigABj0LHu_-NXVbwUIVbkhWDWiIm6KqP-bjE4-4';
+
+function initSupabase() {
+  myName = document.getElementById('player-name').value.trim();
+  if (!myName) { showError('Enter your name.'); return false; }
+  supabase = window.supabase.createClient(SUPA_URL, SUPA_KEY);
+  return true;
+}
+
+async function createRoom() {
+  if (!initSupabase()) return;
+  roomId = genCode();
+  const { error } = await supabase.from('rooms').insert({
+    id: roomId,
+    player_x: myName,
+    board: ['','','','','','','','',''],
+    current_turn: 'X',
+    status: 'waiting'
+  });
+  if (error) { showError('Supabase error: ' + error.message); return; }
+  mySymbol = 'X';
+  enterGame();
+}
+
+async function joinRoom() {
+  if (!initSupabase()) return;
+  const code = document.getElementById('join-room-id').value.trim().toUpperCase();
+  if (!code) { showError('Enter a room code.'); return; }
+  roomId = code;
+  const { data, error } = await supabase.from('rooms').select('*').eq('id', roomId).single();
+  if (error || !data) { showError('Room not found.'); return; }
+  if (data.player_o) { showError('Room is full.'); return; }
+  await supabase.from('rooms').update({ player_o: myName, status: 'playing' }).eq('id', roomId);
+  mySymbol = 'O';
+  enterGame();
+}
+
+function enterGame() {
+  document.getElementById('config-screen').style.display = 'none';
+  const gs = document.getElementById('game-screen');
+  gs.style.display = 'flex';
+  document.getElementById('room-code-display').textContent = roomId;
+  subscribeRoom();
+  subscribeChat();
+  addSysMsg('You joined as ' + mySymbol + ' (' + myName + ')');
+  addSysMsg('Share room code: ' + roomId);
+}
+
+function subscribeRoom() {
+  channel = supabase.channel('room-' + roomId)
+    .on('postgres_changes', {
+      event: 'UPDATE', schema: 'public', table: 'rooms', filter: 'id=eq.' + roomId
+    }, payload => {
+      currentRoom = payload.new;
+      renderRoom(currentRoom);
+    })
+    .subscribe();
+
+  // Load initial state
+  supabase.from('rooms').select('*').eq('id', roomId).single().then(({ data }) => {
+    if (data) { currentRoom = data; renderRoom(data); }
+  });
+}
+
+function subscribeChat() {
+  supabase.channel('chat-' + roomId)
+    .on('postgres_changes', {
+      event: 'INSERT', schema: 'public', table: 'messages', filter: 'room_id=eq.' + roomId
+    }, payload => {
+      const msg = payload.new;
+      if (msg.sender !== myName) addChatMsg(msg.sender, msg.content, false);
+    })
+    .subscribe();
+}
+
+function renderRoom(room) {
+  const nx = document.getElementById('name-x');
+  const no = document.getElementById('name-o');
+  nx.textContent = room.player_x || 'waiting...';
+  nx.className = 'name' + (room.player_x ? ' set' : '');
+  no.textContent = room.player_o || 'waiting...';
+  no.className = 'name' + (room.player_o ? ' set' : '');
+
+  document.getElementById('pill-x').classList.toggle('active', room.current_turn === 'X' && room.status === 'playing');
+  document.getElementById('pill-o').classList.toggle('active', room.current_turn === 'O' && room.status === 'playing');
+
+  const board = room.board || [];
+  const cells = document.querySelectorAll('.cell');
+  cells.forEach((cell, i) => {
+    const val = board[i] || '';
+    cell.textContent = val;
+    cell.className = 'cell' + (val ? ' taken ' + val.toLowerCase() : '');
+  });
+
+  let statusText = '';
+  if (room.status === 'waiting') statusText = 'Waiting for opponent...';
+  else if (room.status === 'playing') {
+    statusText = room.current_turn === mySymbol ? 'Your turn' : "Opponent's turn";
+  } else if (room.status === 'done') {
+    statusText = room.winner === 'draw' ? 'Draw!' : (room.winner === mySymbol ? 'You won!' : 'Opponent won!');
+  }
+  document.getElementById('status-msg').textContent = statusText;
+
+  if (room.status === 'done') {
+    const winLine = findWinLine(board);
+    if (winLine) winLine.forEach(i => cells[i].classList.add('win'));
+    const overlay = document.getElementById('result-overlay');
+    const txt = document.getElementById('result-text');
+    if (room.winner === 'draw') txt.textContent = 'Draw!';
+    else if (room.winner === mySymbol) txt.textContent = 'You won! 🎉';
+    else txt.textContent = 'You lost.';
+    overlay.classList.add('show');
+  } else {
+    document.getElementById('result-overlay').classList.remove('show');
+  }
+}
+
+function findWinLine(board) {
+  for (const line of WINS) {
+    const [a,b,c] = line;
+    if (board[a] && board[a] === board[b] && board[a] === board[c]) return line;
+  }
+  return null;
+}
+
+async function makeMove(idx) {
+  if (!currentRoom) return;
+  if (currentRoom.status !== 'playing') return;
+  if (currentRoom.current_turn !== mySymbol) return;
+  if (currentRoom.board[idx]) return;
+
+  const newBoard = [...currentRoom.board];
+  newBoard[idx] = mySymbol;
+
+  let winner = null;
+  let status = 'playing';
+  const nextTurn = mySymbol === 'X' ? 'O' : 'X';
+
+  if (checkWin(newBoard, mySymbol)) { winner = mySymbol; status = 'done'; }
+  else if (newBoard.every(c => c)) { winner = 'draw'; status = 'done'; }
+
+  await supabase.from('rooms').update({
+    board: newBoard,
+    current_turn: nextTurn,
+    status,
+    winner
+  }).eq('id', roomId);
+}
+
+function checkWin(board, sym) {
+  return WINS.some(([a,b,c]) => board[a]===sym && board[b]===sym && board[c]===sym);
+}
+
+async function resetGame() {
+  await supabase.from('rooms').update({
+    board: ['','','','','','','','',''],
+    current_turn: 'X',
+    status: 'playing',
+    winner: null
+  }).eq('id', roomId);
+  document.getElementById('result-overlay').classList.remove('show');
+}
+
+async function sendChat() {
+  const input = document.getElementById('chat-input');
+  const content = input.value.trim();
+  if (!content) return;
+  input.value = '';
+  addChatMsg(myName, content, true);
+  await supabase.from('messages').insert({ room_id: roomId, sender: myName, content });
+}
+
+function addChatMsg(sender, content, isMe) {
+  const box = document.getElementById('chat-messages');
+  const div = document.createElement('div');
+  div.className = 'msg ' + (isMe ? 'from-me' : 'from-other');
+  div.innerHTML = `<span class="msg-name">${escHtml(sender)}</span>${escHtml(content)}`;
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+
+function addSysMsg(text) {
+  const box = document.getElementById('chat-messages');
+  const div = document.createElement('div');
+  div.className = 'msg sys';
+  div.textContent = '— ' + text;
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+</body>
+</html>
